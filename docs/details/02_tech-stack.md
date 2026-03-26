@@ -26,9 +26,9 @@
 
 | 項目 | 採用技術 | 採用理由 | 評価観点 | 備考 |
 | --- | --- | --- | --- | --- |
-| 言語 | TypeScript | 型安全に UI と API 契約を扱いやすく、少人数開発でも保守しやすい | 型安全性 / 学習コスト / 保守性 | 既存 `web/` と整合 |
-| フレームワーク | Next.js 16（App Router） | ルーティング、認証画面、管理画面、SSR/CSR の使い分けを 1 つの基盤で扱える | エコシステム / SSR可否 / パフォーマンス | 現行実装あり |
-| UIライブラリ | Tailwind CSS + shadcn/ui | MVP で開発速度を出しつつ、Admin Dashboard と運営画面の一貫性を出しやすい | デザイン一貫性 / 開発速度 | 現状は Tailwind 導入済み。shadcn/ui は追加前提 |
+| 言語 | TypeScript | 型安全に UI と API 契約を扱いやすく、少人数開発でも保守しやすい | 型安全性 / 学習コスト / 保守性 | 配置予定の `web/` と整合 |
+| フレームワーク | Next.js 16（App Router） | ルーティング、認証画面、管理画面、SSR/CSR の使い分けを 1 つの基盤で扱える | エコシステム / SSR可否 / パフォーマンス | 雛形を別 PR で追加予定 |
+| UIライブラリ | Tailwind CSS + shadcn/ui | MVP で開発速度を出しつつ、Admin Dashboard と運営画面の一貫性を出しやすい | デザイン一貫性 / 開発速度 | Tailwind / shadcn.ui は導入予定（現時点では未配置） |
 | 状態管理 | TanStack Query + React Context | Server State と認証・テナント文脈を分離しやすく、Redux ほど重くしない | スケール耐性 / Server State分離 | UI の局所状態は React 標準 state を優先 |
 | フォーム管理 | React Hook Form + Zod | スカウト入力や管理画面設定のバリデーションを軽量に実装できる | パフォーマンス / バリデーション | Zod は API 入出力の型共有にも相性が良い |
 | テスト | Vitest + Testing Library + Playwright | UI 単体、画面挙動、主要導線 E2E を段階的に担保できる | カバレッジ / 実行速度 | MVP は重要導線の E2E を最小構成で開始 |
