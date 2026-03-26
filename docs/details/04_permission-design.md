@@ -357,11 +357,11 @@ function authorize(subject, action, resource, context) {
 
 # 🔟 データモデル連携
 
-| ルール | 参照項目 |
+| ルール | 参照項目（DB / JWT / コンテキスト） |
 | --- | --- |
 | Tenant 境界 | `resource.tenant_id`, `subject.tenant_id` |
 | Hackathon 所属 | `hackathon_memberships` |
-| Sponsor 可視範囲 | `sponsor_visible_hackathons` |
+| Sponsor 可視範囲 | DB: `sponsor_visible_hackathons` / JWT・コンテキスト: Sponsor Visibility Scope（`allowed_hackathon_ids`） |
 | Invite 有効性 | `invites.expires_at`, `invites.revoked_at`, `invites.password_hash` |
 | スカウト受信可否 | `hackathon_memberships.is_scout_allowed` |
 | Judge 送信権限 | `hackathons.judge_send_enabled` または同等設定 |
