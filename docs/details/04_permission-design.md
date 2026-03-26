@@ -108,7 +108,10 @@ if not user.authenticated:
     deny(401)
 
 membership = resolve_membership(user, target_scope)
-if membership is None and role != SponsorVisibleScope:
+if membership is None and not (
+    user.role == 'Sponsor'
+    and is_within_sponsor_visibility_scope(user, target_scope)
+):
     deny(403 or 404)
 
 if action not in role_allowed_actions[user.role]:
