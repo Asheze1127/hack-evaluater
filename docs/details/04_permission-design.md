@@ -90,7 +90,7 @@ MVP の前提:
 | Invite: create | allow | deny | deny | deny |
 | Invite: reissue | allow | deny | deny | deny |
 | Invite: revoke | allow | deny | deny | deny |
-| SponsorScope: read/update | allow | deny | deny | deny |
+| Sponsor Visibility Scope: read/update | allow | deny | deny | deny |
 | Scout: create/send | allow | allow | conditional allow | deny |
 | Scout: receive | deny | deny | deny | allow |
 | ScoutPreference: update | deny | deny | deny | allow |
