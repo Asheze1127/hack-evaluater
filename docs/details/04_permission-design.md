@@ -30,7 +30,7 @@
 | Role | 主体に付与される役割。`Admin`、`Sponsor`、`Judge`、`Hacker` |
 | Scope | 権限が有効な範囲。Tenant または Hackathon |
 | Membership | ユーザーがどの Tenant / Hackathon にどの Role で属しているかを表す関係 |
-| Sponsor Visibility Scope | `Sponsor` が閲覧可能な Hackathon 範囲 |
+| Sponsor Visibility Scope | `Sponsor` が閲覧可能な Hackathon 範囲。以降で登場する `SponsorScope` / `Sponsor Scope` は本用語と同義とする |
 | Invite | 招待 URL + 参加パスワード + ロール + 有効期限を持つ参加導線 |
 
 ---
