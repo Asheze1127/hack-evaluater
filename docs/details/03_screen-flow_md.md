@@ -38,7 +38,7 @@
 | S-22 | スカウト確認 | 送信前の最終確認 | `Sponsor` / `Judge` | 必須 | P0 |
 | S-23 | スカウト送信完了 | 送信成功を表示し次アクションへ戻す | `Sponsor` / `Judge` | 必須 | P0 |
 | S-30 | 出場者ホーム | `Hacker` の最小ホーム。参加中 Hackathon と受信設定への入口 | `Hacker` | 必須 | P0 |
-| S-31 | スカウト受信設定 | opt-in / opt-out を切り替える | `Hacker` | 必須 | P0 |
+| S-31 | スカウト受信設定 | 初期値 opt-out の受信設定を opt-in / opt-out で切り替える | `Hacker` | 必須 | P0 |
 | S-40 | Judge ホーム | `Judge` の最小ホーム。参加中 Hackathon と利用可能機能を表示 | `Judge` | 必須 | P0 |
 | S-50 | PlatformAdmin Dashboard | `PlatformAdmin` 向けのグローバル管理画面入口 | `PlatformAdmin` | 必須 | P0 |
 | S-51 | Tenant 一覧 | Tenant の一覧と状態確認 | `PlatformAdmin` | 必須 | P0 |
@@ -51,7 +51,7 @@
 | S-64 | Hackathon 追加 | Tenant 配下に新規 Hackathon を作成する | `TenantAdmin` | 必須 | P0 |
 | S-65 | HackathonOrganizer 割り当て | Hackathon ごとに `HackathonOrganizer` を割り当てる | `TenantAdmin` | 必須 | P0 |
 | S-70 | HackathonOrganizer Dashboard | 担当 Hackathon の管理画面入口 | `HackathonOrganizer` | 必須 | P0 |
-| S-71 | Hackathon 設定 | Hackathon の状態、スカウト ON / OFF、Judge 送信可否を設定する | `HackathonOrganizer` | 必須 | P0 |
+| S-71 | Hackathon 設定 | Hackathon のステータス、スカウト ON / OFF、Judge 送信可否を設定する | `HackathonOrganizer` | 必須 | P0 |
 | S-72 | Hackathon 招待管理 | `Hacker` / `Judge` 用招待の発行、有効期限設定、再発行、無効化を行う | `HackathonOrganizer` | 必須 | P0 |
 | S-99 | 404 / 権限外 | 存在しない URL、ABAC 不許可時のフォールバック | 全ロール | 任意 | P0 |
 
@@ -63,7 +63,7 @@
 | S-81 | スカウト詳細 | スカウト内容、状態、履歴の確認 | `Sponsor` / `Judge` / `Hacker` | 必須 | P1 |
 | S-82 | Tenant 別メール文面設定 | Tenant ごとの通知文面を調整 | `TenantAdmin` | 必須 | P1 |
 | S-90 | チーム検索 | 条件でスカウト候補を探す | `Sponsor` / `Judge` | 必須 | P1 |
-| S-91 | AI ヒアリング | チーム情報を AI と対話して確認 | `Sponsor` | 必須 | P2 |
+| S-91 | Sponsor 向け AI ヒアリング | チーム情報を AI と対話して確認 | `Sponsor` | 必須 | P2 |
 
 ---
 
@@ -269,6 +269,7 @@ flowchart TD
 
 - MVP の受信体験の中心はメールであり、アプリ内の受信一覧は P1 で追加する。
 - `Hacker` が最低限必要とする P0 画面は、参加中 Hackathon の確認と受信設定画面。
+- `Hacker` の `is_scout_allowed` 初期値は opt-out (`false`) とし、参加直後は `S-31` で明示的に opt-in するまで送信対象にしない。
 
 ---
 
@@ -344,9 +345,14 @@ flowchart TD
 `S-71` で扱う P0 項目:
 
 - Hackathon 名
-- 公開 / 非公開状態
+- ステータス (`draft` / `active` / `closed` / `archived`)
 - スカウト機能 ON / OFF
 - Judge 送信権限設定
+
+補足:
+
+- 基本遷移は `draft -> active -> closed -> archived` とする。
+- `closed -> active` の再開は `TenantAdmin` のみ許可する。
 
 `S-72` で扱う P0 項目:
 
