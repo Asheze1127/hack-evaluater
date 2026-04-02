@@ -16,6 +16,7 @@
 補足:
 
 - `PlatformAdmin` はプロバイダー側の最小グローバル権限
+- 初期 `PlatformAdmin` は招待フローではなく、運用者向けのブートストラップ手段で付与する
 - `TenantAdmin` は Tenant 単位の上位権限
 - `HackathonOrganizer` は Hackathon 単位の運営権限
 - 管理ロールと送信ロールは分離し、スカウト送信は `Sponsor` または送信権限を持つ `Judge` でのみ評価する
@@ -302,6 +303,10 @@ if subject.role == Sponsor and resource.type in ["judge_score", "judge_note"]:
     deny(403)
 ```
 
+補足:
+
+- `judge_score` / `judge_note` は将来の審査機能拡張で導入する Resource を想定した条件であり、P0 の ERD には含めない。
+
 ---
 
 # 8️⃣ 権限マトリクス
@@ -392,21 +397,29 @@ if subject.role == Sponsor and resource.type in ["judge_score", "judge_note"]:
 
 # 🔟 API レイヤー統合方針
 
-```typescript
-function authorize(subject, action, resource, context) {
-  if (!isAuthenticated(subject)) throw Unauthorized
+```go
+func Authorize(subject Subject, action Action, resource Resource, ctx Context) error {
+    if !IsAuthenticated(subject) {
+        return ErrUnauthorized
+    }
 
-  const bindings = resolveRoleBindings(subject)
-  if (!bindings.length) throw Forbidden
+    bindings := ResolveRoleBindings(subject)
+    if len(bindings) == 0 {
+        return ErrForbidden
+    }
 
-  if (!rbacAllow(bindings, action, resource.type, resource.scope)) {
-    throw Forbidden
-  }
+    if !RBACAllow(bindings, action, resource.Type, resource.Scope) {
+        return ErrForbidden
+    }
 
-  if (!abacAllow(subject, action, resource, context)) {
-    if (context.shouldHideExistence) throw NotFound
-    throw Forbidden
-  }
+    if !ABACAllow(subject, action, resource, ctx) {
+        if ctx.ShouldHideExistence {
+            return ErrNotFound
+        }
+        return ErrForbidden
+    }
+
+    return nil
 }
 ```
 
