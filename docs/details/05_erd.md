@@ -10,6 +10,7 @@
 | 認証前提 | 認証プロバイダは環境変数で切り替える。DB には保持せず、アプリ側ではローカル `users` を保持する |
 | 権限モデル | Hybrid（RBAC + ABAC）。認可の主データは `user_role_bindings` |
 | 境界防御 | 認可はアプリケーションを主とし、`prod` の PostgreSQL では tenant スコープ主要テーブルに RLS を併用する |
+| PostgreSQL 前提 | `UNIQUE NULLS NOT DISTINCT` を使うため 15 以上を前提とする |
 | ID戦略 | `UUID` を前提とする |
 | 時刻型 | `timestamptz` を前提とする |
 | 論理削除方針 | 汎用 `deleted_at` は持たず、`status`、`revoked_at`、`left_at` など状態遷移で扱う |
@@ -53,6 +54,7 @@
 - すべての権限は `user_role_bindings` で評価する。
 - `PlatformAdmin`、`TenantAdmin`、`HackathonOrganizer`、`Sponsor`、`Judge`、`Hacker` を同じテーブルで扱う。
 - 同一ユーザーが複数ロール、複数スコープを持てるようにする。
+- グローバルスコープの NULL を正しく一意制約で扱うため、PostgreSQL 15+ の `UNIQUE NULLS NOT DISTINCT` を使う。
 
 ### 2.2 `hackathon_memberships` は業務上の参加情報を持つ
 
@@ -157,10 +159,13 @@ erDiagram
     }
 
     sponsor_visible_hackathons {
+        uuid id PK
         uuid sponsor_role_binding_id FK
         uuid hackathon_id FK
         uuid granted_by_user_id FK
+        uuid revoked_by_user_id FK
         timestamptz created_at
+        timestamptz revoked_at
     }
 
     scouts {
@@ -275,6 +280,13 @@ Tenant 配下の開催回やイベント単位を表す。
 
 - UNIQUE (`tenant_id`, `slug`)
 
+状態運用:
+
+- `draft`: 準備中。招待の新規利用とスカウト送信は受け付けない。
+- `active`: 通常運用中。参加とスカウト送信を許可する。
+- `closed`: 開催終了後。既存データは参照できるが、新規参加とスカウト送信は停止する。
+- `archived`: 長期保存用の読み取り専用状態。
+
 ### 4.4 `user_role_bindings`
 
 認可評価の正本。全ロールを共通形式で保持する。
@@ -294,8 +306,12 @@ Tenant 配下の開催回やイベント単位を表す。
 
 推奨制約:
 
-- UNIQUE (`user_id`, `role`, `scope_type`, `tenant_id`, `hackathon_id`)
+- UNIQUE NULLS NOT DISTINCT (`user_id`, `role`, `scope_type`, `tenant_id`, `hackathon_id`)
 - `role` と `scope_type` の組み合わせを制限する
+
+補足:
+
+- PostgreSQL 15 未満を採用する場合は、`scope_type` ごとの部分 UNIQUE INDEX で同等制約を表現する。
 
 許容組み合わせ:
 
@@ -333,6 +349,12 @@ Tenant 配下の開催回やイベント単位を表す。
 - `target_role = sponsor` のとき `scope_type = tenant`
 - `target_role IN (judge, hacker)` のとき `scope_type = hackathon`
 
+トークン仕様:
+
+- 生トークンは `crypto/rand` で 32 バイト以上の乱数を生成し、Base64URL エンコードして URL に埋め込む。
+- DB には生トークンを保存せず、SHA-256 の `token_digest` だけを保持する。
+- URL 形式は `Sponsor = /invite/sponsors/{raw_token}`、`Judge/Hacker = /invite/hackathons/{raw_token}` とする。
+
 ### 4.6 `hackathon_memberships`
 
 Hackathon 参加の業務正本。`Judge` / `Hacker` を対象にし、`Hacker` のスカウト受信可否を持つ。
@@ -343,7 +365,7 @@ Hackathon 参加の業務正本。`Judge` / `Hacker` を対象にし、`Hacker` 
 | `user_id` | UUID | FK `users.id` NOT NULL | 参加ユーザー |
 | `hackathon_id` | UUID | FK `hackathons.id` NOT NULL | 所属 Hackathon |
 | `membership_role` | VARCHAR | NOT NULL | `judge` / `hacker` |
-| `is_scout_allowed` | BOOLEAN | NOT NULL | `Hacker` の受信可否。`Judge` では未使用または固定値 |
+| `is_scout_allowed` | BOOLEAN | NOT NULL DEFAULT FALSE | `Hacker` の受信可否。参加直後は `false` で開始し、`Judge` では常に `false` として扱う |
 | `status` | VARCHAR | NOT NULL | `active` / `withdrawn` |
 | `source_invite_id` | UUID | FK `invites.id` NULL | 招待参加由来の Invite |
 | `joined_at` | TIMESTAMPTZ | NOT NULL | 参加日時 |
@@ -359,15 +381,19 @@ Hackathon 参加の業務正本。`Judge` / `Hacker` を対象にし、`Hacker` 
 
 | カラム | 型 | 制約 | 説明 |
 | --- | --- | --- | --- |
+| `id` | UUID | PK | Sponsor 可視範囲レコード ID |
 | `sponsor_role_binding_id` | UUID | FK `user_role_bindings.id` | `role = sponsor` の binding |
 | `hackathon_id` | UUID | FK `hackathons.id` | 表示許可する Hackathon |
 | `granted_by_user_id` | UUID | FK `users.id` NOT NULL | 設定者。通常は `TenantAdmin` |
+| `revoked_by_user_id` | UUID | FK `users.id` NULL | 可視範囲を剥奪したユーザー |
 | `created_at` | TIMESTAMPTZ | NOT NULL | 設定日時 |
+| `revoked_at` | TIMESTAMPTZ | NULL | 可視範囲の剥奪日時 |
 
 推奨制約:
 
-- PK (`sponsor_role_binding_id`, `hackathon_id`)
+- `revoked_at IS NULL` の active レコードに対して PARTIAL UNIQUE INDEX (`sponsor_role_binding_id`, `hackathon_id`)
 - `hackathon.tenant_id` と `sponsor_role_binding.tenant_id` の一致を保証する
+- 可視範囲の剥奪は DELETE ではなく `revoked_at` / `revoked_by_user_id` を埋めるソフトデリートで管理する
 
 ### 4.8 `scouts`
 
@@ -419,6 +445,7 @@ Hackathon 参加の業務正本。`Judge` / `Hacker` を対象にし、`Hacker` 
 
 ### 5.1 Tenant 作成
 
+0. 初回環境構築時に、管理用セットアップスクリプトで最初の `PlatformAdmin` を作成する
 1. `PlatformAdmin` が `tenants` を作成する
 2. 初期 `TenantAdmin` の `user_role_bindings` を作る
 
@@ -454,6 +481,7 @@ Hackathon 参加の業務正本。`Judge` / `Hacker` を対象にし、`Hacker` 
 - `role` と `scope_type` の整合
 - `invites.target_role` と `invites.scope_type` の整合
 - Sponsor 可視範囲の重複登録防止
+- `hackathons.status` の列挙値と前方遷移の基本制約
 - `prod` では tenant スコープ主要テーブルに PostgreSQL RLS を適用し、`dev` でも同じポリシーを再現できる構成を優先する
 
 ### アプリケーション制約で担保するもの
@@ -464,6 +492,7 @@ Hackathon 参加の業務正本。`Judge` / `Hacker` を対象にし、`Hacker` 
 - `Judge` は `judge_send_enabled = true` のときだけ送信できる
 - `Hacker` は `is_scout_allowed = true` のときだけ送信対象になる
 - `TenantAdmin` / `HackathonOrganizer` は、別途 `Sponsor` / `Judge` binding を持たない限り送信主体にならない
+- `tenants.status = inactive` の場合、配下の Hackathon、Invite、Membership、Scout は削除しないが、active context 選択、新規招待利用、設定変更、スカウト送信を停止する
 
 ---
 
