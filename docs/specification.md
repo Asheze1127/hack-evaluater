@@ -98,6 +98,11 @@ Hackathon は、Tenant 配下にぶら下がるイベント単位である。
 - `TenantAdmin` / `HackathonOrganizer` は管理主体であり、スカウト送信主体ではない。
 
 ## 5. 主要ユーザーフロー
+### 5.0. 初期 `PlatformAdmin` のブートストラップ
+1. 初回環境構築時に、招待 URL ではなく `scripts/` 配下の管理用セットアップスクリプトで 1 人目の `PlatformAdmin` を作成する。
+2. セットアップスクリプトは `users` と Global スコープの `user_role_bindings` を upsert する。
+3. 2 人目以降の `PlatformAdmin` の追加・削除も、既存 `PlatformAdmin` が同じ管理用スクリプトまたは同等の管理手段で行う。
+
 ### 5.1. PlatformAdmin の初期セットアップ
 1. `PlatformAdmin` が Tenant を作成する。
 2. 初期 `TenantAdmin` を割り当てる。
@@ -138,6 +143,11 @@ Hackathon は、Tenant 配下にぶら下がるイベント単位である。
 - `PlatformAdmin` は Tenant を作成できる。
 - `PlatformAdmin` は Tenant の有効 / 無効を切り替えられる。
 - `PlatformAdmin` は初期 `TenantAdmin` を設定できる。
+- 初期 `PlatformAdmin` は招待フローではなく、環境セットアップ用の管理スクリプトで作成する。
+- `PlatformAdmin` の追加・削除は既存 `PlatformAdmin` だけが実行できる。
+- Tenant を `inactive` にした場合、配下の Hackathon、Invite、Membership、Scout、Role Binding は削除せず保持する。
+- `inactive` な Tenant に紐づく Invite は新規参加に利用できず、既存ユーザーもその Tenant を active context として選択できない。
+- `inactive` な Tenant 配下の Hackathon では、スカウト送信、招待管理、Hackathon 設定変更を禁止し、既存データは監査・参照目的でのみ保持する。
 
 ### 6.2. Tenant 管理
 - `TenantAdmin` は Tenant 配下に複数の Hackathon を作成できる。
@@ -150,14 +160,22 @@ Hackathon は、Tenant 配下にぶら下がるイベント単位である。
 - `HackathonOrganizer` は担当 Hackathon のスカウト機能 ON / OFF を設定できる。
 - `HackathonOrganizer` は担当 Hackathon の Judge 送信可否を設定できる。
 - `TenantAdmin` は自 Tenant 配下のすべての Hackathon で同等の設定変更ができる。
+- Hackathon の状態は `draft` / `active` / `closed` / `archived` の 4 状態で管理する。
+- `draft` は準備中であり、招待の新規利用とスカウト送信は受け付けない。
+- `active` は参加とスカウト送信を許可する通常運用状態とする。
+- `closed` は開催終了後の状態であり、既存データは参照できるが、新規参加とスカウト送信は停止する。
+- `archived` は長期保存用の読み取り専用状態とする。
+- 基本遷移は `draft -> active -> closed -> archived` とし、`closed -> active` の再開は `TenantAdmin` のみ許可する。
 
 ### 6.4. 招待管理
 - 招待 URL には参加パスワードを設定できる。
 - 招待 URL には有効期限を設定できる。
 - 有効期限は `5 / 7 / 14 / 30 / 60 / 90日` から選択できる。
+- デフォルト有効期限は `14日` とする。
 - 招待 URL は再発行できる。
 - 招待 URL は無効化できる。
 - 招待は対象ロールを明示して発行する。
+- 参加パスワードを更新した場合、その時点以降の新規参加試行にだけ新しいパスワードを適用し、既参加者の所属状態には影響させない。
 
 ### 6.5. 参加と所属
 - `Hacker` と `Judge` は Hackathon 単位で所属する。
@@ -176,6 +194,8 @@ Hackathon は、Tenant 配下にぶら下がるイベント単位である。
 
 ### 6.8. スカウト受信設定
 - `Hacker` は Hackathon 参加後に、スカウト受信の opt-in / opt-out を切り替えられる。
+- `Hacker` の初期値は opt-out (`false`) とし、参加完了直後は明示的な opt-in が行われるまでスカウト対象にしない。
+- `Judge` の `is_scout_allowed` は常に `false` として扱い、送信対象の可視性制御には使わない。
 - opt-out 中の `Hacker` はスカウト対象に表示しない、またはアクセス不能として扱う。
 
 ## 7. アクセス制御要件
@@ -226,9 +246,9 @@ Hackathon は、Tenant 配下にぶら下がるイベント単位である。
 - 企業賞ワークフロー支援
 - 監査ログの可視化
 
-## 9. 懸念事項・未確定事項
-- 招待 URL のデフォルト有効期限をどれにするか
-- 参加パスワードの更新時に既参加者へどう影響させるか
-- `TenantAdmin` と `HackathonOrganizer` を同時に持つユーザーの初期ホームをどうするか
-- 同一ユーザーが複数 Tenant / 複数 Hackathon にまたがる場合のロール切替 UX
-- 検索や AI 機能をどの時点で追加するか
+## 9. 運用メモ
+- 招待 URL のデフォルト有効期限は `14日` とする。
+- 参加パスワード更新は新規参加試行にのみ影響し、既参加者の所属状態は維持する。
+- `TenantAdmin` と `HackathonOrganizer` など複数コンテキストを持つユーザーは、ログイン後に `S-09 ロール / スコープ選択` へ遷移させる。
+- 同一ユーザーが複数 Tenant / 複数 Hackathon にまたがる場合も、active context は単一のコンテキスト切替 UI で選ばせる。
+- 検索と AI 機能は MVP 後に段階導入し、目安として `チーム検索 = P1`、`AI ヒアリング = P2`、`企業賞ワークフロー支援 = P3` とする。
