@@ -13,7 +13,7 @@
 | パフォーマンス要件 | 通常 API は p95 500ms 前後、画面初期表示は 2 秒前後を目安。メール送信などは非同期化を前提 |
 | チーム体制 | 少人数での MVP 開発を想定。学習コストよりも保守性と実装速度を重視 |
 | リリース頻度 | 初期は週次または隔週リリースを想定 |
-| 予算制約 | コスト重視。`env=dev` ではできる限りローカル OSS を使い、AWS 課金を避ける |
+| 予算制約 | コスト重視。`dev` はローカル OSS、`prod` は AWS マネージドサービスを使い分ける |
 | 既存資産 | `web/` に Next.js 16 + TypeScript のフロントエンドを配置予定。バックエンドは Go 前提で新規整備予定 |
 
 ---
@@ -40,12 +40,12 @@
 | 項目 | 採用技術 | 採用理由 | 評価観点 | 備考 |
 | --- | --- | --- | --- | --- |
 | 言語 | Go | 並行処理、型安全、デプロイ容易性のバランスが良く、API/認可層との相性が良い | 生産性 / 型安全 / 採用市場 | 将来の権限制御拡張にも向く |
-| 実行環境 | Go アプリケーション + Docker | ローカル再現性と AWS 配備のしやすさを両立しやすい | 成熟度 / エコシステム | 開発は Docker Compose 前提 |
+| 実行環境 | Go アプリケーション + Docker | `dev` では Docker Compose、`prod` では EKS 上のコンテナ実行へ寄せやすい | 成熟度 / エコシステム | ローカルと本番の差分を抑えやすい |
 | フレームワーク | Gin | Go での採用実績が多く、ルーティング、ミドルウェア、JSON API の実装速度を出しやすい | 構造化 / 拡張性 | 認証・認可ミドルウェアの実装とも相性が良い |
 | API方式 | REST + OpenAPI First | Web、Admin Dashboard、通知処理との境界が明確で、将来のクライアント追加にも対応しやすい | 型安全 / 柔軟性 / 過不足 | `oapi-codegen` と Gin の組み合わせを前提 |
 | ORM / DBアクセス | `sqlc` + `pgx` + `goose` | ORM より SQL 主導で制御しやすく、PostgreSQL を活かしやすい | 型統合 / マイグレーション管理 | MVP は複雑なドメインでも追いやすい構成を優先 |
-| 認証 | Amazon Cognito（本番）/ Magnito（dev） | メール認証を標準で扱え、ローカル開発では AWS 課金なしで近い挙動を再現できる | セキュリティ / OAuth対応 | API 側では JWT 検証を行う |
-| 非同期処理 | 未採用（MVP） | まずは構成を単純に保ち、スカウト送信時の通知メールもアプリケーションから直接送信する | 再試行 / 耐障害性 | 負荷や失敗再送の要求が出たらキュー導入を検討 |
+| 認証 | `APP_ENV` に応じて `dev=Magnito`、`prod=Cognito` を切り替える | メール認証を統一的に扱いやすい | セキュリティ / OAuth対応 | API 側では JWT 検証を行う |
+| 非同期処理 | 未採用（MVP） | まずは API から直接 SES / Mailpit に送る | 再試行 / 耐障害性 | SQS は将来検討 |
 
 ---
 
@@ -53,8 +53,8 @@
 
 | 項目 | 採用技術 | 採用理由 | 評価観点 | 備考 |
 | --- | --- | --- | --- | --- |
-| メインDB | PostgreSQL | テナント、ユーザー、スカウト、設定などのトランザクション整合性が重要なため | ACID / スケール性 | 本番は Amazon RDS PostgreSQL、dev は Docker 上の PostgreSQL |
-| キャッシュ | 未採用（MVP） | まずは DB とアプリの単純性を優先し、キャッシュ起因の整合性問題を避ける | レイテンシ改善 | 必要になった時点で Valkey / Redis を追加 |
+| メインDB | PostgreSQL | テナント、ユーザー、スカウト、設定などのトランザクション整合性が重要なため | ACID / スケール性 | `dev` は Docker 上 PostgreSQL、`prod` は RDS PostgreSQL Multi-AZ。`prod` では RLS 併用を前提 |
+| キャッシュ | Redis / ElastiCache for Redis | 招待トークン TTL、セッション補助、参照負荷軽減に使いやすい | レイテンシ改善 / TTL管理 | `dev` は Redis、`prod` は ElastiCache |
 | 検索 | PostgreSQL の全文検索 + `pg_trgm` | MVP のスカウト対象検索は外部検索基盤なしで十分対応可能 | 全文検索性能 | 専用検索エンジンは後回し |
 | 分析基盤 | 未採用（MVP） | 初期はプロダクト分析より運用ログと監査ログを優先する | BI連携 / ETL容易性 | 必要なら Athena / BigQuery などを後日検討 |
 
@@ -64,13 +64,17 @@
 
 | 項目 | 採用技術 | 採用理由 | 評価観点 | 備考 |
 | --- | --- | --- | --- | --- |
-| ホスティング | AWS ECS Fargate + CloudFront | AWS に寄せつつ、アプリと API をコンテナ前提で運用しやすい | 可用性 / コスト | MVP は最小タスク構成で開始 |
-| コンテナ | Docker / Docker Compose | 開発環境と本番イメージの差分を減らしやすい | 再現性 / 可搬性 | dev ではローカル OSS 群も Compose で起動 |
-| IaC | AWS CDK（TypeScript） | AWS リソースをコード化しやすく、フロントエンド側と同じ言語で扱える | 構成管理 / 再現性 | まずは少人数開発での変更容易性を優先 |
+| ホスティング | Docker Compose（dev）/ AWS EKS + S3 + CloudFront（prod） | ローカル再現性と本番のスケーラブルな公開構成を両立しやすい | 再現性 / 説明しやすさ | `prod` では API は EKS、frontend は S3 + CloudFront |
+| コンテナ | Docker / Kubernetes | ローカルと `prod` の両方でコンテナ前提に統一しやすい | 再現性 / 可搬性 | `prod` の Pod は HPA 対象 |
+| IaC | Terraform + Kubernetes manifest | AWS リソースとワークロード定義を責務分離して管理しやすい | 構成管理 / 再現性 | Terraform は AWS、K8s manifest は Pod / HPA |
 | CI/CD | GitHub Actions | リポジトリ連携が容易で、lint / test / build / deploy を段階的に自動化できる | 自動化 / 安定性 | MVP は main への反映を起点に運用 |
-| 監視 | Amazon CloudWatch | AWS 上のメトリクス、ログ、アラームを低運用コストで一元管理できる | 可観測性 / アラート精度 | まずは最小限の監視から開始 |
-| ログ管理 | CloudWatch Logs + S3 アーカイブ | アプリログと監査ログの保全、後追い調査をしやすい | トレーサビリティ | dev は標準出力中心 |
-| CDN | Amazon CloudFront | 静的配信と TLS 終端を安定して担える | レイテンシ最適化 | 将来 WAF 追加も容易 |
+| 監視 | stdout / Docker logs（dev）、CloudWatch + Container Insights（prod） | 環境に応じて過不足なく可観測性を持てる | 可観測性 / シンプルさ | `prod` では EKS メトリクスを追う |
+| ログ管理 | 標準出力（dev）/ CloudWatch Logs + S3（prod） | 監査ログと運用ログを `prod` で保全しやすい | トレーサビリティ | 詳細は logging doc で管理 |
+| CDN | CloudFront | 静的 frontend 配信と公開入口の統一に向く | 配信経路の明瞭さ / TLS終端 | `prod` で採用 |
+| 入口保護 | WAF + ALB + ACM | API 入口の保護と TLS 管理を分かりやすく構成できる | セキュリティ / 公開経路の整理 | `prod` で採用 |
+| シークレット管理 | Secrets Manager | DB / Redis / SES 関連の秘匿情報を安全に扱いやすい | セキュリティ / 運用性 | `prod` で採用 |
+| コンテナレジストリ | Amazon ECR | EKS 配備用イメージ管理 | 配布容易性 / 権限管理 | `prod` で採用 |
+| DNS | Route53 | ドメイン管理と CloudFront 連携 | 公開経路の整理 | `prod` で採用 |
 
 ---
 
@@ -78,24 +82,26 @@
 
 | 項目 | 方針 | 評価観点 |
 | --- | --- | --- |
-| 認証方式 | Cognito によるメール認証を標準とし、dev では Magnito で代替する | 標準準拠 / 拡張性 |
+| 認証方式 | `APP_ENV` に応じて `dev=Magnito`、`prod=Cognito` を切り替える | 標準準拠 / 拡張性 |
 | 認可 | アプリケーション側で RBAC + ABAC を実装し、テナント境界と送信権限を厳格に分離する | RBAC / ABAC可否 |
-| 通信 | CloudFront / ALB / ACM により TLS を強制する | TLS強制 / 証明書管理 |
-| データ保護 | RDS、S3 の暗号化を有効化し、ログには個人情報を極力残さない | 暗号化 / マスキング |
+| DB 境界防御 | `prod` では PostgreSQL RLS を併用し、テナント境界の防御層を増やす | 多層防御 / 誤実装耐性 |
+| 通信 | `prod` では Route53 / CloudFront / WAF / ALB / ACM による公開経路を前提とする | TLS強制 / 証明書管理 |
+| データ保護 | `dev` は `.env` 管理、`prod` は Secrets Manager と AWS 側暗号化を前提とする | 暗号化 / マスキング |
 | 脆弱性対策 | Dependabot、Trivy、`npm audit`、`govulncheck` を組み合わせて継続検査する | 自動検査 / パッチ管理 |
 
 ---
 
 # 2️⃣ 環境別の使い分け
 
-| 領域 | `env=dev` | `env=staging / prod` |
+| 領域 | `APP_ENV=dev` | `APP_ENV=prod` |
 | --- | --- | --- |
 | 認証 | Magnito | Amazon Cognito |
 | メール送信 | Mailpit | Amazon SES |
 | オブジェクトストレージ | MinIO | Amazon S3 |
-| メインDB | PostgreSQL on Docker | Amazon RDS PostgreSQL |
-| アプリ実行 | Docker Compose | AWS ECS Fargate |
-| 監視 / ログ | 標準出力、ローカル確認 | CloudWatch / CloudWatch Logs |
+| メインDB | PostgreSQL on Docker | Amazon RDS PostgreSQL Multi-AZ |
+| キャッシュ | Redis on Docker | Amazon ElastiCache for Redis |
+| アプリ実行 | Docker Compose | EKS + S3 Frontend |
+| 監視 / ログ | 標準出力、Docker logs | CloudWatch / CloudWatch Logs |
 
 ---
 
@@ -103,7 +109,8 @@
 
 - MVP では「スカウト送信」「メール通知」「テナント設定」「Admin Dashboard」を成立させることを最優先とする。
 - そのため、外部検索基盤、専用キャッシュ、分析基盤は導入しない。
-- `env=dev` はできる限りローカル OSS で揃え、AWS 課金を発生させない。
-- `env=staging / prod` は Cognito、SES、S3、RDS など AWS マネージドサービスを利用し、運用負荷を下げる。
-- 通知量や再試行要件が大きくなった時点で、SQS などのキュー導入を別途検討する。
+- `APP_ENV=dev|prod` に応じて依存先を切り替える前提で設計する。
+- `dev` はできる限りローカル OSS で揃える。
+- `prod` は EKS、Cognito、SES、S3、RDS、ElastiCache、CloudWatch、Secrets Manager を用いる。
+- Pod は Kubernetes HPA で自動スケールする。
 - 将来の AI 機能は MVP の必須スタックに含めず、必要になった時点で別途技術選定する。
