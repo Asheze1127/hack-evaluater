@@ -1,17 +1,20 @@
 # docs/AGENTS.md
 
-AI向け `docs/` ナビゲーションガイド。ここを起点に必要なドキュメントを特定して参照すること。
+AI向け `docs/` ナビゲーションガイド。現在の HackTrack 仕様に合わせて参照すること。
 
 ---
 
 ## プロダクト概要
 
-**Hackathon Board** — ハッカソン向けWebダッシュボード。
+**HackTrack** — ハッカソン運営向けのマルチテナント型スカウト管理基盤。
 
-| 対象ユーザー | ハッカソン参加者（初心者）/ メンター / 運営 |
+| 項目 | 内容 |
 | --- | --- |
-| コア機能 | 進捗可視化（`/progress`）、Q&A AI一次回答（`/question`）、SlackからGitHub Issue自動起票 |
-| MVP優先度 | P0のみまず実装。P1以降は体験向上フェーズ |
+| 基本構造 | `Tenant > Hackathon` |
+| 主なロール | `PlatformAdmin` / `TenantAdmin` / `HackathonOrganizer` / `Sponsor` / `Judge` / `Hacker` |
+| コア機能 | 招待 URL + パスワード参加、スポンサー可視範囲制御、スカウト送信、メール通知 |
+| 認証 | `dev=Magnito`、`prod=Cognito` |
+| 実行環境 | `dev=Docker Compose`、`prod=AWS + EKS` |
 
 ---
 
@@ -19,24 +22,22 @@ AI向け `docs/` ナビゲーションガイド。ここを起点に必要なド
 
 | ファイル | 内容の要点 | 参照すべき場面 |
 | --- | --- | --- |
-| [`specification.md`](./specification.md) | Why / What / How の全体概要。課題・スコープ・アイデア・開発ステップ | 仕様の背景・意図を確認したいとき |
-| [`details/01_feature-list.md`](./details/01_feature-list.md) | 機能一覧と優先度（P0〜P3）。カテゴリA（進捗）・B（Q&A）・C（Issue化）・D（分析） | 機能追加・スコープ判断・優先度確認 |
-| [`details/02_tech-stack.md`](./details/02_tech-stack.md) | 技術選定一覧（フロント: Next.js/TS/ShadCN、バック: Go/api-codegen/sqlc、DB: PostgreSQL、インフラ: AWS ECS/CDK/SQS）| 技術選定理由・依存追加の判断 |
-| [`details/03_screen-flow.md`](./details/03_screen-flow.md) | Web画面遷移（S-01〜S-05）とSlack操作遷移（L-01〜L-05）。Mermaidフローチャートあり | 画面・UX設計・遷移実装 |
-| [`details/04_permission-design.md`](./details/04_permission-design.md) | RBAC設計。MVPでは `MENTOR` ロールのみ。ABAC・チームスコープは将来対応 | 認可実装・ミドルウェア設計 |
-| [`details/05_erd.md`](./details/05_erd.md) | データベース設計 | データベースの設計、マイグレーションをするとき |
-| [`details/06_directory.md`](./details/06_directory.md) | Monorepoディレクトリ構成（`backend/` Go、`web/` Next.js、`lambda/`、`infra/terraform/`）| ファイル配置・新規ファイル作成場所の確認 |
-| [`details/07_infrastructure.md`](./details/07_infrastructure.md) | AWSインフラ構成（ECS、CloudFront/WAF、SQS、RDB）。Mermaidアーキテクチャ図あり | インフラ変更・デプロイ設計 |
-| [`details/08_logging.md`](./details/08_logging.md) | 保存するべきログの保存内容 | バックエンドでログ保存をするとき |
+| [`specification.md`](./specification.md) | 仕様全体。課題、ロール、フロー、機能要件 | 仕様の背景と全体像を確認したいとき |
+| [`details/01_feature-list_md.md`](./details/01_feature-list_md.md) | 機能一覧と優先度 | スコープ判断、P0/P1整理 |
+| [`details/02_tech-stack.md`](./details/02_tech-stack.md) | 技術選定一覧。`dev/prod` のサービス切替を含む | 技術選定や依存追加の判断 |
+| [`details/03_screen-flow_md.md`](./details/03_screen-flow_md.md) | 画面遷移 | 画面 / UX 設計、ルーティング実装 |
+| [`details/04_permission-design.md`](./details/04_permission-design.md) | RBAC + ABAC 設計 | 認可実装、ミドルウェア設計 |
+| [`details/05_erd.md`](./details/05_erd.md) | ERD とテーブル責務 | DB 設計、マイグレーション検討 |
+| [`details/06_directory.md`](./details/06_directory.md) | `web / go-back / infra / docs` の配置方針 | 新規ファイルの置き場判断 |
+| [`details/07_infrastructure.md`](./details/07_infrastructure.md) | `dev=Docker Compose`、`prod=AWS + EKS` のインフラ構成 | インフラ設計、デプロイ構成の確認 |
+| [`details/08_logging.md`](./details/08_logging.md) | 構造化ログ、監査ログ、CloudWatch 方針 | ログ出力、監査証跡の設計 |
 
 ---
 
-## アーキテクチャ要点（素早い把握用）
+## 速読ポイント
 
-```
-Web (/slide, /get)
-  └→ POST /slide [署名検証 → 重複チェック → DB保存 → 200 OK]
-```
-
-- LLM: Amazon Bedrock（Vercel AI SDK + `@ai-sdk/amazon-bedrock` アダプター）devローカル → geminiFlash
-- 認証: Webは独自Session認証
+- フロントは `feature / container` アーキテクチャ
+- バックエンドは Go + Gin + OpenAPI + sqlc
+- `APP_ENV=dev|prod` を主スイッチとして依存先を切り替える
+- `prod` の API は EKS 上の Pod として動作し、HPA でオートスケーリングする
+- `prod` の主要サービスは Route53、CloudFront、WAF、ALB、EKS、RDS、ElastiCache、Cognito、SES、S3、CloudWatch、Secrets Manager、ECR
