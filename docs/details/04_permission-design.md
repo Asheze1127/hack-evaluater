@@ -8,7 +8,8 @@
 | --- | --- |
 | 権限モデル | Hybrid（RBAC + ABAC） |
 | マルチテナント | あり |
-| 認証方式 | JWT（本番: Cognito / dev: Magnito） |
+| 認証方式 | JWT（`APP_ENV=dev`: Magnito / `APP_ENV=prod`: Cognito） |
+| 境界防御 | アプリケーション側の RBAC + ABAC を主とし、`prod` では PostgreSQL RLS を防御層として併用する |
 | スコープ単位 | Global / Tenant / Hackathon / Resource |
 | MVP方針 | `PlatformAdmin`、`TenantAdmin`、`HackathonOrganizer`、`Sponsor`、`Judge`、`Hacker` の 6 ロールを前提に、Tenant 立ち上げ、招待参加、Hackathon 運営、スカウト送信に必要な権限制御を優先する |
 
