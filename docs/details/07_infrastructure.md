@@ -8,7 +8,7 @@
 | --- | --- |
 | 環境区分 | `dev` と `prod` の 2 環境を前提にする |
 | `dev` | Docker Compose で動かすローカル実行環境 |
-| `prod` | AWS 上のデプロイ環境 |
+| `prod` | AWS 上のデプロイ環境。frontend は静的エクスポート成果物を配信する |
 | アプリ側の主スイッチ | `.env` の `APP_ENV=dev | prod` |
 | IaC | AWS リソースは Terraform で管理する |
 | K8s方針 | `prod` の API は Kubernetes Pod として動かし、HPA で自動スケールする |
@@ -29,6 +29,7 @@
 - `dev`: ローカル OSS を使って 1 台で再現する
 - `prod`: AWS マネージドサービス + EKS で公開する
 - アプリケーションは `APP_ENV=dev|prod` に応じて、認証、メール、ストレージ、キャッシュ、ログの接続先を切り替える
+- `prod` の frontend は Next.js App Router を静的エクスポートして S3 + CloudFront で配信し、runtime SSR は使わない
 
 ---
 
@@ -85,11 +86,11 @@ flowchart TD
     USERS[Users]
     R53[Route53]
     CF[CloudFront]
-    S3FE[S3 Frontend]
+    S3FE[S3 Frontend Static Export]
     WAF[WAF]
     ACM[ACM]
 
-    subgraph VPC[hack-evaluater VPC]
+    subgraph VPC[hacktrack-vpc]
         subgraph AZA[Availability Zone A]
             ALB[ALB]
             NATA[NAT Gateway A]
@@ -144,7 +145,7 @@ flowchart TD
 | --- | --- |
 | DNS | Route53 |
 | CDN | CloudFront |
-| Frontend Hosting | S3 Frontend |
+| Frontend Hosting | S3 Frontend Static Export |
 | Edge Security | WAF |
 | TLS | ACM |
 | API Entry | ALB |
@@ -164,7 +165,8 @@ flowchart TD
 - DB は Multi-AZ の Primary / Standby 構成
 - `prod` の tenant スコープ主要テーブルでは PostgreSQL RLS を防御層として併用する
 - Cache は Primary / Replica 構成
-- Frontend は CloudFront + S3 で配信する
+- Frontend は Next.js の静的エクスポート成果物を CloudFront + S3 で配信する
+- CloudFront は静的配信用の S3 origin と API 用の ALB origin を持ち、`/api/*` などの動的通信は ALB 側へルーティングする
 
 ---
 
@@ -208,11 +210,11 @@ APP_ENV=prod
 
 | 項目 | `dev` | `prod` |
 | --- | --- | --- |
-| Frontend | Next.js on Docker | S3 Frontend + CloudFront |
+| Frontend | Next.js dev server on Docker | Next.js static export + S3 + CloudFront |
 | API | Go API on Docker | Go API on EKS |
-| API公開 | localhost | ALB + WAF |
+| API公開 | localhost | CloudFront + WAF + ALB |
 | DNS | localhost | Route53 |
-| TLS | ローカル簡易 | ACM |
+| TLS | `http://localhost` を標準。HTTPS が必要な検証時のみ `mkcert` を使う | ACM |
 | Auth | Magnito | Cognito |
 | DB | PostgreSQL | RDS PostgreSQL Multi-AZ |
 | Cache | Redis | ElastiCache for Redis |
