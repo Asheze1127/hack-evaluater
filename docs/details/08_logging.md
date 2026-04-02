@@ -65,6 +65,13 @@
 /hacktrack/{env}/mail
 ```
 
+### 3.1 フロントエンドのログ方針
+
+- `APP_ENV=dev` では、ブラウザ console と React の開発エラー表示を主な確認手段とする。
+- `APP_ENV=prod` では、クライアントの全操作ログは収集しない。
+- `APP_ENV=prod` で収集するのは、未捕捉例外、`unhandledrejection`、初期表示を阻害する致命的な API エラーなどの障害解析に必要な最小限の `web.client_error` イベントに限定する。
+- フロントエンドから送るエラーログにも `trace_id` と route 情報を付与し、API 側の構造化ログに集約する。
+
 ---
 
 ## 4️⃣ 共通フィールド
@@ -451,6 +458,13 @@ P0 で最低限ほしいアラート:
 - `tenant_id`
 - `hackathon_id`
 
+詳細方針:
+
+- `trace_id` の正本は API ingress ミドルウェアとし、`X-Trace-Id` ヘッダーが妥当なら引き継ぎ、存在しなければ API 側で新規発行する。
+- API はレスポンスヘッダーにも `X-Trace-Id` を返し、Web は以降の API 呼び出しや `web.client_error` 送信時に同じ値を再利用する。
+- API から mailer へ処理を引き渡すときは、同じ `trace_id` を Go の `context.Context` に載せて伝播する。
+- 将来 mailer が別プロセスやキューを経由する場合も、同じ `trace_id` をヘッダーまたはメッセージ属性に積む。
+
 ### 11.2 監査ログの出し分け
 
 - 状態変更 API は、DB コミット成功後に `Audit Log` を出す
@@ -461,6 +475,12 @@ P0 で最低限ほしいアラート:
 
 - 同一操作の再送に備え、`request_id` またはアプリ側冪等キーで重複判定しやすくする
 - 監査ログには重複判定結果も `metadata` で残せるようにする
+
+### 11.4 フロントエンド起点の障害ログ
+
+- `web.client_error` は `service=web`、`event_category=application` で記録する。
+- 対象は未捕捉例外、`unhandledrejection`、初期表示失敗、主要 API の致命的エラーに限定する。
+- UI 操作の逐次イベントや全文入力内容は送らない。
 
 ---
 
