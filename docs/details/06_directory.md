@@ -7,7 +7,7 @@
 | 項目 | 内容 |
 | --- | --- |
 | リポジトリ構成 | 単一リポジトリ内に `web / go-back / infra / docs` を置く構成 |
-| フロントエンド方針 | Next.js App Router + `feature / container` アーキテクチャ |
+| フロントエンド方針 | Next.js App Router + `feature / container` アーキテクチャ。`prod` は静的エクスポート前提 |
 | バックエンド方針 | Go + Gin + OpenAPI + sqlc を前提に、責務ごとに整理する |
 | インフラ方針 | `APP_ENV=dev|prod` を前提に、ローカル実行環境と AWS デプロイ環境の両方を持つ |
 | MVP方針 | まずは P0 に必要なディレクトリを明確にし、汎用的すぎる置き場を避ける |
@@ -28,7 +28,7 @@ root/
 ├── go-back/                # バックエンド（Go）
 ├── infra/                  # Docker / Terraform / Kubernetes
 ├── docs/                   # 仕様、設計、運用ドキュメント
-├── scripts/                # 補助スクリプト
+├── scripts/                # PlatformAdmin 初期セットアップ、補助スクリプト
 ├── .github/                # CI / GitHub設定
 ├── .env.example            # 環境変数サンプル
 └── README.md
@@ -55,6 +55,7 @@ root/
 - 各 feature の中に `components`、`containers`、`hooks` などを置く
 - 複数 feature で共有されるものだけを `src/shared/` に出す
 - フレームワーク依存やクライアント生成などの横断関心は `src/lib/` に置く
+- `prod` のフロントは静的エクスポート前提とし、runtime SSR、Server Actions、Route Handlers には依存しない
 
 ### 2.2 推奨構成
 
@@ -321,8 +322,12 @@ db/
 │   ├── users.sql
 │   ├── tenants.sql
 │   ├── hackathons.sql
+│   ├── user_role_bindings.sql
 │   ├── invites.sql
-│   └── scouts.sql
+│   ├── hackathon_memberships.sql
+│   ├── sponsor_visible_hackathons.sql
+│   ├── scouts.sql
+│   └── scout_email_deliveries.sql
 └── sqlc/
 ```
 
